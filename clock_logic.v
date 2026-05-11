@@ -5,7 +5,12 @@ module clock_logic(
     reg [26:0] ticker;
     reg [25:0] adj_ticker;
     reg paused = 0;
-    reg alr_paused;
+    reg pause_delayed;
+    always @(posedge clk) begin
+        pause_delayed <= pause;
+    end
+
+    wire pause_pulse = pause && !pause_delayed; // High for exactly one clock cycle
     
     wire sec_tick = (ticker == 100_000_000);     // 1Hz
     wire adj_tick = (adj_ticker == 50_000_000);  // 2Hz
@@ -16,7 +21,6 @@ module clock_logic(
         ticker <= 0;
         adj_ticker <= 0;
         paused <= 0;
-        alr_paused <= 0;
     end else begin
         // 1. ALWAYS increment tickers regardless of mode
         // This ensures the "heartbeat" of the system never stops.
@@ -42,12 +46,10 @@ module clock_logic(
                 end
             end
         end else begin 
-            if (pause && !alr_paused) begin
+            if (pause_pulse) begin
                 paused <= !paused;
-                alr_paused <= 1;
             end 
             if (!paused) begin
-                alr_paused <= 0;
                 // --- Normal Ticking ---
                 if (sec_tick) begin
                     if (s0 == 9) begin
