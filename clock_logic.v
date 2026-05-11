@@ -3,42 +3,53 @@ module clock_logic(
     output reg [3:0] m1, m0, s1, s0
 );
     reg [26:0] ticker;
-    reg [23:0] adj_ticker;
-    reg paused;
+    reg [25:0] adj_ticker;
+    reg paused = 0;
+    reg alr_paused;
     
     wire sec_tick = (ticker == 100_000_000);     // 1Hz
-    wire adj_tick = (adj_ticker == 25_000_000);  // 4Hz (Adjustment speed)
+    wire adj_tick = (adj_ticker == 50_000_000);  // 2Hz
 
     always @(posedge clk) begin
-        if (reset) begin
-            {m1, m0, s1, s0} <= 16'h0000;
-            ticker <= 0;
-            adj_ticker <= 0;
-            paused <= 1;
-        end else begin
-            // --- Adjustment Logic (Switch is ON) ---
-            if (adj_en) begin
-                if (adj_tick) begin
-                    adj_ticker <= 0;
-                    if (adj_sel) begin // Adjust Minutes
-                        if (m1 == 5 && m0 == 9) {m1, m0} <= 8'h00;
-                        else if (m0 == 9) begin m0 <= 0; m1 <= m1 + 1; end
-                        else m0 <= m0 + 1;
-                    end else begin // Adjust Seconds
-                        if (s1 == 5 && s0 == 9) {s1, s0} <= 8'h00;
-                        else if (s0 == 9) begin s0 <= 0; s1 <= s1 + 1; end
-                        else s0 <= s0 + 1;
-                    end
-                end else adj_ticker <= adj_ticker + 1;
-            end 
-            
-            // --- Normal Ticking (Adjust is OFF) ---
-            if (pause) begin
-                paused = !paused;
+    if (reset) begin
+        {m1, m0, s1, s0} <= 16'h0000;
+        ticker <= 0;
+        adj_ticker <= 0;
+        paused <= 0;
+        alr_paused <= 0;
+    end else begin
+        // 1. ALWAYS increment tickers regardless of mode
+        // This ensures the "heartbeat" of the system never stops.
+        if (ticker >= 100_000_000) ticker <= 0;
+        else ticker <= ticker + 1;
+
+        if (adj_ticker >= 50_000_000) adj_ticker <= 0;
+        else adj_ticker <= adj_ticker + 1;
+
+        // 2. Handle Adjustment Mode
+        if (adj_en) begin
+            if (adj_tick) begin
+                if (adj_sel) begin // Minutes
+                    if (m0 == 9) begin
+                        m0 <= 0;
+                        m1 <= (m1 == 5) ? 0 : m1 + 1;
+                    end else m0 <= m0 + 1;
+                end else begin // Seconds
+                    if (s0 == 9) begin
+                        s0 <= 0;
+                        s1 <= (s1 == 5) ? 0 : s1 + 1;
+                    end else s0 <= s0 + 1;
                 end
-            else if (!paused) begin
+            end
+        end else begin 
+            if (pause && !alr_paused) begin
+                paused <= !paused;
+                alr_paused <= 1;
+            end 
+            if (!paused) begin
+                alr_paused <= 0;
+                // --- Normal Ticking ---
                 if (sec_tick) begin
-                    ticker <= 0;
                     if (s0 == 9) begin
                         s0 <= 0;
                         if (s1 == 5) begin
@@ -50,8 +61,9 @@ module clock_logic(
                             end else m0 <= m0 + 1;
                         end else s1 <= s1 + 1;
                     end else s0 <= s0 + 1;
-                end else ticker <= ticker + 1;
+                end
             end
         end
+    end
     end
 endmodule
