@@ -7,7 +7,7 @@ module tb_reaction_timer();
     reg        reset;
     reg        start_timer;
     reg        stop_timer;
-    wire [11:0] current_time;
+    wire [15:0] current_time;
 
     // 2. Instantiate the Unit Under Test (UUT)
     reaction_timer #(.ONE_MS_LIMIT(32'd10)) uut (
