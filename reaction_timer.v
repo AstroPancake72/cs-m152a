@@ -7,12 +7,13 @@ module reaction_timer #(
     input  wire        reset,
     input  wire        start_timer,
     input  wire        stop_timer,
-    output reg  [11:0] current_time
+    output reg  [15:0] current_time
 );
 
     reg [31:0] clk_counter;
     reg        timer_running;
-
+    
+    reg [3:0] bcd_thousands;
     reg [3:0] bcd_hundreds;
     reg [3:0] bcd_tens;
     reg [3:0] bcd_ones;
@@ -21,7 +22,8 @@ module reaction_timer #(
         if (reset) begin
             timer_running <= 1'b0;
             clk_counter   <= 32'd0;
-
+            
+            bcd_thousands <= 4'd0;
             bcd_hundreds  <= 4'd0;
             bcd_tens      <= 4'd0;
             bcd_ones      <= 4'd0;
@@ -31,7 +33,8 @@ module reaction_timer #(
             // Start a NEW reaction measurement
             timer_running <= 1'b1;
             clk_counter   <= 32'd0;
-
+            
+            bcd_thousands <= 4'd0;
             bcd_hundreds  <= 4'd0;
             bcd_tens      <= 4'd0;
             bcd_ones      <= 4'd0;
@@ -62,9 +65,16 @@ module reaction_timer #(
                         if (bcd_hundreds < 4'd9)
                             bcd_hundreds <= bcd_hundreds + 1'b1;
                         else begin
-                            bcd_hundreds <= 4'd9;
-                            bcd_tens     <= 4'd9;
-                            bcd_ones     <= 4'd9;
+                            bcd_hundreds <= 4'd0;
+                            
+                            if (bcd_thousands < 4'd9)
+                                bcd_thousands <= bcd_thousands + 1'b1;
+                            else begin
+                                bcd_thousands <= 4'd9;
+                                bcd_hundreds <= 4'd9;
+                                bcd_tens     <= 4'd9;
+                                bcd_ones     <= 4'd9;
+                            end
                         end
                     end
                 end
@@ -73,7 +83,7 @@ module reaction_timer #(
     end
 
     always @(*) begin
-        current_time = {bcd_hundreds, bcd_tens, bcd_ones};
+        current_time = {bcd_thousands, bcd_hundreds, bcd_tens, bcd_ones};
     end
 
 endmodule
