@@ -1,0 +1,75 @@
+`timescale 1ns / 1ps // Time unit is 1ns, precision is 1ps
+
+module reaction_timer_tb;
+
+    // 1. Inputs to the Device Under Test (DUT) declared as 'reg'
+    reg clk;
+    reg reset;
+    reg timer_enable;
+
+    // 2. Outputs from the DUT declared as 'wire'
+    wire [15:0] time_ms;
+
+    // 3. Instantiate the Device Under Test (DUT)
+    //    We override MS_COUNT to 10 for rapid simulation!
+    reaction_timer #(.MS_COUNT(10)) uut (
+        .clk(clk),
+        .reset(reset),
+        .timer_enable(timer_enable),
+        .time_ms(time_ms)
+    );
+
+    // 4. Clock Generation (100 MHz clock)
+    //    Toggles every 5ns, meaning a full clock cycle is 10ns.
+    //    Since MS_COUNT = 10, a "millisecond" will take 100ns of simulation time.
+    always begin
+        #5 clk = ~clk;
+    end
+
+    // 5. Test Stimulus Sequence
+    initial begin
+        // Initialize all inputs
+        clk = 0;
+        reset = 0;
+        timer_enable = 0;
+
+        // --- Step 1: Apply Synchronous Reset ---
+        #10;
+        reset = 1;
+        #10; // Hold reset for 1 clock cycle
+        reset = 0;
+        #10;
+
+        // --- Step 2: Enable the Timer (LED turns on) ---
+        $display("Enabling the reaction timer...");
+        timer_enable = 1; 
+        
+        // Wait 250ns. Since 1 ms = 100ns in this simulation,
+        // this should allow the timer to count up to 2 ms.
+        #250; 
+
+        // --- Step 3: Disable the Timer (Player hits the button) ---
+        $display("Disabling the timer. Checking if value freezes...");
+        timer_enable = 0; 
+        
+        // Wait 50ns while disabled to ensure the time_ms output doesn't change
+        #50;
+
+        // --- Step 4: Re-enable the Timer (Next round starts) ---
+        $display("Re-enabling the timer. Checking if it resumes smoothly...");
+        timer_enable = 1;
+        #120; // Let it count a bit more (should reach 3 ms)
+
+        // --- Step 5: Test Mid-Count Reset ---
+        $display("Applying reset mid-game...");
+        reset = 1;
+        #10;
+        reset = 0;
+        #30;
+
+        // Finish the simulation
+        $display("Simulation finished successfully!");
+        $finish;
+    end
+
+endmodule
