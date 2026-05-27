@@ -1,61 +1,82 @@
+`timescale 1ns / 1ps
+
 module top(
     input clk,
-    input btnC,        // Reset
-    input btnL,        // Pause
-    input [1:0] sw,    // sw[0]: Select (Min/Sec), sw[1]: Adjust Enable
+    input btnL,        // Left Player button
+    input btnR,        // Right Player button
+    input btnU,        // System Reset / Reset Game
     output [6:0] seg,
     output dp,
     output [3:0] an
 );
-    assign dp = 1;
-    reg [25:0] blink_ticker;
-    reg blink_state;
+    assign dp = 1'b1; // Turn off decimal point (active low)
     
-    wire rst, pause;
-    // Debounce the buttons; switches are generally stable but we'll 
-    // debounce the logic for consistency.
-    debouncer db_rst(.clk(clk), .noisy_in(btnC), .clean_out(rst));
-    debouncer db_ps (.clk(clk), .noisy_in(btnL), .clean_out(pause));
-
-    wire [3:0] m1, m0, s1, s0;
+    // Cleaned up signals from debouncers
+    wire rst;
+    wire p1_stop;
+    wire p2_stop;
     
-    wire [3:0] disp_m1, disp_m0, disp_s1, disp_s0;
+    // Debounce the physical inputs to prevent double-triggers
+    debouncer db_rst(.clk(clk), .noisy_in(btnU), .clean_out(rst));
+    debouncer db_p1 (.clk(clk), .noisy_in(btnL), .clean_out(p1_stop));
+    debouncer db_p2 (.clk(clk), .noisy_in(btnR), .clean_out(p2_stop));
 
-    // If adjusting minutes AND blink_state is 0, show 'blank' (hex F), else show actual value
-    assign disp_m1 = (sw[1] && sw[0] && !blink_state) ? 4'hF : m1;
-    assign disp_m0 = (sw[1] && sw[0] && !blink_state) ? 4'hF : m0;
+    // Game state tracking logic
+    reg  game_active;
+    wire start_pulse;
+    wire stop_pulse;
+    
+    // If either player presses their button and the game is active, stop the clock
+    assign stop_pulse = (p1_stop || p2_stop) && game_active;
+    
+    // Automatically trigger the start pulse right as Reset is released
+    // (You can also map this to another button combination if you choose)
+    assign start_pulse = ~rst && !game_active && (clk_counter_init == 0);
 
-    // If adjusting seconds AND blink_state is 0, show 'blank', else show actual value
-    assign disp_s1 = (sw[1] && !sw[0] && !blink_state) ? 4'hF : s1;
-    assign disp_s0 = (sw[1] && !sw[0] && !blink_state) ? 4'hF : s0;
+    reg [1:0] clk_counter_init; // Simple state tracker to initiate start on release of reset
 
-    clock_logic core (
+    always @(posedge clk or posedge rst) begin
+        if (rst) begin
+            game_active <= 1'b0;
+            clk_counter_init <= 2'b0;
+        end else begin
+            if (start_pulse) begin
+                game_active <= 1'b1;
+                clk_counter_init <= 2'b1;
+            end else if (stop_pulse) begin
+                game_active <= 1'b0;
+            end
+        end
+    end
+
+    // Connection wire from reaction timer to display
+    wire [15:0] reaction_bcd;
+
+    // Instantiate your Reaction Timer module
+    // Assuming a standard 100MHz clock, ONE_MS_LIMIT = 100,000 cycles per ms
+    reaction_timer #(
+        .ONE_MS_LIMIT(100_000)
+    ) rt_inst (
         .clk(clk),
         .reset(rst),
-        .pause(pause),
-        .adj_sel(sw[0]),
-        .adj_en(sw[1]),
-        .m1(m1), .m0(m0), .s1(s1), .s0(s0)
+        .start_timer(start_pulse),
+        .stop_timer(stop_pulse),
+        .current_time(reaction_bcd)
     );
 
+    // Split the BCD output from the reaction timer to drive the segments
+    wire [3:0] d3, d2, d1, d0;
+    assign d3 = reaction_bcd[15:12]; // Thousands place
+    assign d2 = reaction_bcd[11:8]; // Hundreds place
+    assign d1 = reaction_bcd[7:4];  // Tens place
+    assign d0 = reaction_bcd[3:0];  // Ones place
+
+    // Instantiate your Seven Segment Driver
     sseg_driver display (
         .clk(clk),
-        .d3(disp_m1), .d2(disp_m0), .d1(disp_s1), .d0(disp_s0), // Use masked values
+        .d3(d3), .d2(d2), .d1(d1), .d0(d0), 
         .seg(seg),
         .an(an)
     );
-    
-    always @(posedge clk) begin
-    if (!sw[1]) begin
-        blink_ticker <= 0;
-        blink_state <= 1;
-    end else begin
-        if (blink_ticker >= 16_666_667) begin // Half-period for 3Hz (approx 1/6th of a second)
-            blink_ticker <= 0;
-            blink_state <= !blink_state;
-        end else begin
-            blink_ticker <= blink_ticker + 1;
-        end
-    end
-end
+
 endmodule
